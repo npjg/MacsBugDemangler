@@ -9,7 +9,7 @@ int copy_name(char **input_ptr, char **output_buf, int *output_len,
               int *has_const, int *has_static);
 int copy_type(char** input_ptr, char** output_ptr, int* output_len, int max_depth, int is_function, char** next_ptr);
 int unmangle(char* output, char* input, int* output_length);
-int main();
+int main(int argc, char *argv[]);
 
 // Function to copy/append string data with length limiting
 int tack(char* src, char** dest_ptr, int* remaining_len, int len) {
@@ -607,25 +607,18 @@ int unmangle(char* output, char* input, int* output_length) {
     }
 }
 
-int main() {
-    char input[1024];
+int main(int argc, char *argv[]) {
     char output[2048];
     int output_length = sizeof(output) - 1; // Reserve space for null terminator
 
-    // Read mangled name from stdin
-    if (fgets(input, sizeof(input), stdin) == NULL) {
-        fprintf(stderr, "Error reading input\n");
+    // Check if we have a command-line argument
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <mangled_name>\n", argv[0]);
         return 1;
     }
 
-    // Remove trailing newline if present
-    size_t len = strlen(input);
-    if (len > 0 && input[len - 1] == '\n') {
-        input[len - 1] = '\0';
-    }
-
-    // Call unmangle function
-    int status = unmangle(output, input, &output_length);
+    // Call unmangle function with the first argument
+    int status = unmangle(output, argv[1], &output_length);
 
     if (status == 1) {
         // Success - print the demangled name
