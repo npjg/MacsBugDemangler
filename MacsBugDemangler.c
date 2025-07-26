@@ -235,7 +235,6 @@ int copy_name(char **input_ptr, char **output_ptr, int *output_size,
             saved_output = *output_ptr;
 
             // Copy the name part
-            // TODO: Check on this one
             tack(input, output_ptr, output_size, digit_value);
 
             input += digit_value + *has_const + *has_static;
