@@ -5,7 +5,7 @@
 
 int tack(char* src, char** dest_ptr, int* remaining_len, int len);
 int copy_param_list(char** input_ptr, char** output_ptr, int* output_remaining, int max_params);
-int copy_name(char **input_ptr, char *output_buf, int *output_len,
+int copy_name(char **input_ptr, char **output_buf, int *output_len,
               int *has_const, int *has_static);
 int copy_type(char** input_ptr, char** output_ptr, int* output_len, int max_depth, int is_function, char** next_ptr);
 int unmangle(char* output, char* input, int* output_length);
@@ -153,15 +153,16 @@ end_processing:
     return 0;
 }
 
-int copy_name(char **input_ptr, char *output_buf, int *output_len,
+int copy_name(char **input_ptr, char **output_ptr, int *output_size,
               int *has_const, int *has_static) {
     char *input = *input_ptr;
-    char *original_input = input;
-    int saved_output_pos = 0;
-    char *operator_str = NULL;
-    int is_op_type = 0;
+    char *orig_input = input;
+    char *saved_output = NULL;
+    char *operator_name = NULL;
+    int is_operator_new = 0;
+    int name_length;
+    int digit_value;
 
-    // Initialize output parameters
     *has_static = 0;
     *has_const = 0;
 
@@ -170,154 +171,159 @@ int copy_name(char **input_ptr, char *output_buf, int *output_len,
         input += 2;
         if (input[0] == 'o' && input[1] == 'p') {
             input += 2;
+            saved_output = *output_ptr;
 
-            // Save current output position
-            saved_output_pos = *output_buf;
-            int saved_len = *output_len;
-
-            // Call copy_type to handle the operator type
-            if (copy_type(&input, output_buf, output_len, 0, 0, 0) != 0) {
+            // Parse type information
+            if (copy_type(&input, output_ptr, output_size, 0, 0, 0) != 0) {
                 return -1;
             }
 
-            // Restore output position and length
-            *output_buf = saved_output_pos;
-            *output_len = saved_len;
+            *output_ptr = saved_output;
+            goto process_rest;
         }
     }
 
     // Skip to next "__" or end of string
-    while (*input != '\0' && !(input[0] == '_' && input[1] == '_')) {
+    process_rest:
+    while (*input && !(input[0] == '_' && input[1] == '_')) {
         input++;
     }
 
-    int name_length = input - original_input;
+    name_length = input - orig_input;
 
-    // If we found "__", process the suffix
-    if (*input != '\0') {
-        input += 2; // Skip "__"
+    // If we found "__", parse the encoded part
+    if (*input) {
+        input += 2; // skip "__"
 
-        // Check if it's a digit (numbered template/overload)
+        // Check if first character is a digit (length encoding)
         if (*input >= '0' && *input <= '9') {
             input++;
-            int num = *input - '0';
+            digit_value = input[-1] - '0';
 
-            // Parse up to 3-digit number
-            if (*++input >= '0' && *input <= '9') {
-                num = num * 10 + (*input - '0');
-                if (*++input >= '0' && *input <= '9') {
-                    num = num * 10 + (*input - '0');
-                    if (*++input >= '0' && *input <= '9') {
-                        return -1; // Too many digits
+            // Parse up to 3 more digits
+            if (*input >= '0' && *input <= '9') {
+                digit_value = digit_value * 10 + (*input - '0');
+                input++;
+
+                if (*input >= '0' && *input <= '9') {
+                    digit_value = digit_value * 10 + (*input - '0');
+                    input++;
+
+                    if (*input >= '0' && *input <= '9') {
+                        // Too many digits - error
+                        return -1;
                     }
                 }
             }
 
-            // Verify the number doesn't exceed string length
-            if (strlen(original_input) < num) {
+            // Verify the length matches
+            if (strlen(input) < digit_value) {
                 return -1;
             }
 
             // Check for 'C' suffix (const)
-            *has_const = (original_input[num] == 'C') ? 1 : 0;
+            *has_const = (input[digit_value] == 'C') ? 1 : 0;
 
             // Check for 'S' suffix (static)
-            *has_static = (original_input[num + *has_const] == 'S') ? 1 : 0;
+            *has_static = (input[digit_value + *has_const] == 'S') ? 1 : 0;
 
             // Add "static " prefix if needed
             if (*has_static) {
-                tack("static ", output_buf, output_len, 7);
+                tack("static ", output_ptr, output_size, 7);
             }
 
+            saved_output = *output_ptr;
+
             // Copy the name part
-            saved_output_pos = *output_buf;
-            tack(original_input, output_buf, output_len, num);
-            input = original_input + num + *has_const + *has_static;
+            // TODO: Check on this one
+            tack(input, output_ptr, output_size, digit_value);
+
+            input += digit_value + *has_const + *has_static;
         }
     }
 
-    // Add "::" if we had a saved position (namespace/class qualifier)
-    if (saved_output_pos != 0) {
-        tack("::", output_buf, output_len, 2);
+    // Add "::" separator if we have a saved output position
+    if (saved_output) {
+        tack("::", output_ptr, output_size, 2);
     }
 
     // Check for operator overloads
-    if (original_input[0] == '_' && original_input[1] == '_') {
+    if (orig_input[0] == '_' && orig_input[1] == '_') {
         if (name_length == 4) {
-            // Two-character operator codes
-            int op_code = (original_input[2] << 8) | original_input[3];
+            // 4-character operator codes
+            int op_code = (orig_input[2] << 8) | orig_input[3];
 
             switch (op_code) {
-                case 0x6161: operator_str = "&&"; break;      // aa
-                case 0x6164: operator_str = "&"; break;       // ad
-                case 0x6172: operator_str = ">>"; break;      // ar
-                case 0x6173: operator_str = "="; break;       // as
-                case 0x6176: operator_str = "~"; break;       // av
-                case 0x6162: operator_str = "delete"; break;  // ab
-                case 0x6163: operator_str = "+"; break;       // ac
-                case 0x6165: operator_str = "-"; break;       // ae
-                case 0x6166: operator_str = "*"; break;       // af
-                case 0x6167: operator_str = "/"; break;       // ag
-                case 0x6168: operator_str = "%"; break;       // ah
-                case 0x6169: operator_str = "<<"; break;      // ai
-                case 0x616A: operator_str = "=="; break;      // aj
-                case 0x616B: operator_str = "!="; break;      // ak
-                case 0x616C: operator_str = "<"; break;       // al
-                case 0x616D: operator_str = ">"; break;       // am
-                case 0x616E: operator_str = "<="; break;     // an
-                case 0x616F: operator_str = ">="; break;     // ao
-                case 0x6170: operator_str = "||"; break;     // ap
-                case 0x6171: operator_str = "!"; break;      // aq
-                case 0x6172: operator_str = "^"; break;      // ar
-                case 0x6173: operator_str = "++"; break;     // as
-                case 0x6174: operator_str = "--"; break;     // at
-                case 0x6175: operator_str = "()"; break;     // au
-                case 0x6176: operator_str = "[]"; break;     // av
-                case 0x6177: operator_str = "->"; break;     // aw
-                case 0x6178: operator_str = "~"; break;      // ax
-                case 0x6179: operator_str = "new"; break;    // ay
+                case 0x6161: operator_name = "&&"; break;  // "aa"
+                case 0x6164: operator_name = "&"; break;   // "ad"
+                case 0x6173: operator_name = "="; break;   // "as"
+                case 0x636c: operator_name = "()"; break; // "cl"
+                case 0x636d: operator_name = ""; break;   // "cm" (comma)
+                case 0x636e: operator_name = "new"; break; // "cn"
+                case 0x636f: operator_name = "~"; break;  // "co"
+                case 0x6463: is_operator_new = 1; break; // "dc" (destructor call)
+                case 0x646c: operator_name = "delete"; break; // "dl"
+                case 0x6476: operator_name = "/"; break;  // "dv"
+                case 0x6571: operator_name = "=="; break; // "eq"
+                case 0x6765: operator_name = ">="; break; // "ge"
+                case 0x6774: operator_name = ">"; break;  // "gt"
+                case 0x6c65: operator_name = "<="; break; // "le"
+                case 0x6c73: operator_name = "<<"; break; // "ls"
+                case 0x6c74: operator_name = "<"; break;  // "lt"
+                case 0x6d64: operator_name = "%"; break;  // "md"
+                case 0x6d69: operator_name = "-"; break;  // "mi"
+                case 0x6d6c: operator_name = "*"; break;  // "ml"
+                case 0x6d6d: operator_name = "--"; break; // "mm"
+                case 0x6e65: operator_name = "!="; break; // "ne"
+                case 0x6e74: operator_name = "!"; break;  // "nt"
+                case 0x6f6f: operator_name = "||"; break; // "oo"
+                case 0x6f72: operator_name = "|"; break;  // "or"
+                case 0x706c: operator_name = "+"; break;  // "pl"
+                case 0x7070: operator_name = "++"; break; // "pp"
+                case 0x7273: operator_name = ">>"; break; // "rs"
+                case 0x7276: operator_name = "[]"; break; // "rv"
+                case 0x7872: operator_name = "^"; break;  // "xr"
+                default: break;
             }
-        } else if (name_length == 5 && original_input[2] == 'a') {
-            // Three-character assignment operator codes
-            int op_code = (original_input[3] << 8) | original_input[4];
+        } else if (name_length == 5 && orig_input[2] == 'a') {
+            // 5-character assignment operators starting with 'a'
+            int op_code = (orig_input[3] << 8) | orig_input[4];
 
             switch (op_code) {
-                case 0x6164: operator_str = "+="; break;     // aad
-                case 0x6165: operator_str = "-="; break;     // aae
-                case 0x6166: operator_str = "*="; break;     // aaf
-                case 0x6167: operator_str = "/="; break;     // aag
-                case 0x6168: operator_str = "%="; break;     // aah
-                case 0x6169: operator_str = "<<="; break;    // aai
-                case 0x616A: operator_str = ">>="; break;    // aaj
-                case 0x616B: operator_str = "&="; break;     // aak
-                case 0x616C: operator_str = "|="; break;     // aal
-                case 0x616D: operator_str = "^="; break;     // aam
+                case 0x6164: operator_name = "&="; break;  // "ad"
+                case 0x6461: operator_name = "+="; break;  // "da" (reversed)
+                case 0x6476: operator_name = "/="; break;  // "dv"
+                case 0x6572: operator_name = "^="; break;  // "er"
+                case 0x6c73: operator_name = "<<="; break; // "ls"
+                case 0x6d69: operator_name = "-="; break;  // "mi"
+                case 0x6d6c: operator_name = "*="; break;  // "ml"
+                case 0x6d64: operator_name = "%="; break;  // "md"
+                case 0x6f72: operator_name = "|="; break;  // "or"
+                case 0x7273: operator_name = ">>="; break; // "rs"
+                default: break;
             }
-        } else if (original_input[2] == 'o' && original_input[3] == 'p') {
-            // User-defined operator name follows "op"
-            operator_str = original_input + 4;
-            is_op_type = 1;
+        } else if (orig_input[2] == 'o' && orig_input[3] == 'p') {
+            // "op" prefix - user-defined operator
+            operator_name = orig_input + 4;
+            is_operator_new = 1;
         }
     }
 
-    // Output operator information
-    if (operator_str != NULL) {
-        tack("operator", output_buf, output_len, 8);
+    if (operator_name) {
+        tack("operator", output_ptr, output_size, 8);
 
-        if (!is_op_type) {
-            tack(operator_str, output_buf, output_len, 0);
+        if (!is_operator_new) {
+            tack(operator_name, output_ptr, output_size, 0);
         } else {
-            // For user-defined operators, call copy_type
-            if (copy_type(&operator_str, output_buf, output_len, 0, 0, 0) != 0) {
+            if (copy_type(&operator_name, output_ptr, output_size, 0, 0, 0) != 0) {
                 return -1;
             }
         }
     } else {
-        // Regular name - just copy it
-        tack(original_input, output_buf, output_len, name_length);
+        // Copy the original name
+        tack(orig_input, output_ptr, output_size, name_length);
     }
 
-    // Update input pointer
     *input_ptr = input;
     return 0;
 }
