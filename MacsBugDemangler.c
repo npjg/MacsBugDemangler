@@ -568,10 +568,10 @@ int copy_type(char** input_ptr, char** output_ptr, int* output_len, int max_dept
 }
 
 int unmangle(char* output, char* input, int* output_length) {
-    int local_var1;
-    int is_const;
+    int is_const = 0;
+    int is_static = 0;
 
-    if (copy_name(&input, &output, output_length, &is_const, &local_var1) != 0) {
+    if (copy_name(&input, &output, output_length, &is_const, &is_static) != 0) {
         return 0;
     }
 
@@ -589,7 +589,7 @@ int unmangle(char* output, char* input, int* output_length) {
         }
     } else {
         // Not a function - check if parsing is complete
-        if (*input != '\0' || is_const != 0 || local_var1 != 0) {
+        if (*input != '\0' || is_const != 0 || is_static != 0) {
             return -1;
         }
     }
