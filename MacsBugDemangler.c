@@ -397,7 +397,7 @@ int copy_type(char** input_ptr, char** output_ptr, int* output_len, int max_dept
         *output_ptr = saved_output;
         *output_len = saved_len;
 
-        if (copy_type(&current_pos, output_ptr, output_len, start_pos, 0, 0) != 0) {
+        if (copy_type(&current_pos, output_ptr, output_len, max_depth + 1, 0, 0) != 0) {
             return -1;
         }
 
@@ -548,7 +548,7 @@ int copy_type(char** input_ptr, char** output_ptr, int* output_len, int max_dept
             (*output_len)--;
         }
 
-        if (copy_type(next_ptr, output_ptr, output_len, start_pos, 1, 0) != 0) {
+        if (copy_type(next_ptr, output_ptr, output_len, max_depth + 1, 1, 0) != 0) {
             return -1;
         }
 
