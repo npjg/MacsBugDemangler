@@ -97,13 +97,13 @@ int copy_param_list(char** input_ptr, char** output_ptr, int* output_remaining, 
             for (int i = 0; i < repeat_count; i++) {
                 // Call tack() to copy the stored parameter
                 tack(param_starts[param_index - 1],
-                     param_ends[param_index - 1] - param_starts[param_index - 1],
-                     output_ptr,
-                     output_remaining);
+                    output_ptr,
+                    output_remaining,
+                    param_ends[param_index - 1] - param_starts[param_index - 1]);
 
                 // Add comma separator if not the last repetition
                 if (repeat_count > 1 && i < repeat_count - 1) {
-                    tack(", ", 2, output_ptr, output_remaining);
+                    tack(", ", output_ptr, output_remaining, 2);
                 }
 
                 // Store parameter bounds if we have room (max 10 parameters)
@@ -135,7 +135,7 @@ int copy_param_list(char** input_ptr, char** output_ptr, int* output_remaining, 
 
         // Add comma separator between parameters (but not after the last one)
         if (*input != '\0' && *input != '_') {
-            tack(", ", 2, output_ptr, output_remaining);
+            tack(", ", output_ptr, output_remaining, 2);
         }
     }
 
@@ -226,19 +226,19 @@ int copy_name(char **input_ptr, char *output_buf, int *output_len,
 
             // Add "static " prefix if needed
             if (*has_static) {
-                tack(output_buf, output_len, 7, "static ");
+                tack("static ", output_buf, output_len, 7);
             }
 
             // Copy the name part
             saved_output_pos = *output_buf;
-            tack(output_buf, output_len, num, original_input);
+            tack(original_input, output_buf, output_len, num);
             input = original_input + num + *has_const + *has_static;
         }
     }
 
     // Add "::" if we had a saved position (namespace/class qualifier)
     if (saved_output_pos != 0) {
-        tack(output_buf, output_len, 2, "::");
+        tack("::", output_buf, output_len, 2);
     }
 
     // Check for operator overloads
@@ -302,10 +302,10 @@ int copy_name(char **input_ptr, char *output_buf, int *output_len,
 
     // Output operator information
     if (operator_str != NULL) {
-        tack(output_buf, output_len, 8, "operator");
+        tack("operator", output_buf, output_len, 8);
 
         if (!is_op_type) {
-            tack(output_buf, output_len, 0, operator_str);
+            tack(operator_str, output_buf, output_len, 0);
         } else {
             // For user-defined operators, call copy_type
             if (copy_type(&operator_str, output_buf, output_len, 0, 0, 0) != 0) {
@@ -314,7 +314,7 @@ int copy_name(char **input_ptr, char *output_buf, int *output_len,
         }
     } else {
         // Regular name - just copy it
-        tack(output_buf, output_len, name_length, original_input);
+        tack(original_input, output_buf, output_len, name_length);
     }
 
     // Update input pointer
@@ -581,7 +581,7 @@ int unmangle(char* output, char* input, int* output_length) {
 
         // If local_var2 is set, append " const"
         if (local_var2) {
-            tack(" const", 6, output, output_length);
+            tack(" const", output, output_length, 6);
         }
     } else {
         // Not a function - check if parsing is complete
