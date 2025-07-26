@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g -std=c99 -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -O1
+CFLAGS = -Wall -Wextra -g -std=c99 -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -O0
 TARGET = MacsBugDemangler
 SOURCE = MacsBugDemangler.c
 
