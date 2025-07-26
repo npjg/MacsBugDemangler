@@ -432,8 +432,8 @@ int copy_type(char** input_ptr, char** output_ptr, int* output_len, int max_dept
 
     // Handle numeric length prefixes
     if (*current_pos >= '0' && *current_pos <= '9') {
+        size_t len = *current_pos - '0';
         current_pos++;
-        size_t len = *input - '0';
 
         // Parse up to 3 digit length
         for (int i = 0; i < 3 && *current_pos >= '0' && *current_pos <= '9'; i++) {
@@ -441,9 +441,10 @@ int copy_type(char** input_ptr, char** output_ptr, int* output_len, int max_dept
             current_pos++;
         }
 
-        if (len > 3) {
-            return -1;
-        }
+        // TODO: Understand what this check is.
+        // if (len > 3) {
+        //     return -1;
+        // }
 
         if (strlen(current_pos) < len) {
             return -1;
@@ -570,9 +571,11 @@ int unmangle(char* output, char* input, int* output_length) {
     int is_const = 0;
     int is_static = 0;
 
+    char *output_start = output;
     if (copy_name(&input, &output, output_length, &is_const, &is_static) != 0) {
         return 0;
     }
+    printf("Demangled: %s\n", output_start);
 
     // Check if it's a function name
     if (*input == 'F') {
