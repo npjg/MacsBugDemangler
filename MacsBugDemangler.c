@@ -42,8 +42,8 @@ int tack(char* src, char** dest_ptr, int* remaining_len, int len) {
 int copy_param_list(char** input_ptr, char** output_ptr, int* output_remaining, int max_params)
 {
     char* input = *input_ptr;
-    char** param_starts = (char**)alloca(10 * sizeof(char*));
-    char** param_ends = (char**)alloca(10 * sizeof(char*));
+    char* param_starts[10];
+    char* param_ends[10];
     int param_count = 0;
 
     // Check if we need to add opening parenthesis
