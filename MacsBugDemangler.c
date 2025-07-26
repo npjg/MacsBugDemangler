@@ -571,7 +571,7 @@ int unmangle(char* output, char* input, int* output_length) {
     int local_var1;
     int is_const;
 
-    if (copy_name(input, output, output_length, &is_const, &local_var1) != 0) {
+    if (copy_name(&input, &output, output_length, &is_const, &local_var1) != 0) {
         return 0;
     }
 
@@ -580,12 +580,12 @@ int unmangle(char* output, char* input, int* output_length) {
         input++; // Skip the 'F'
 
         // Call copy_param_list with flag 0
-        if (copy_param_list(input, output, output_length, 0) != 0 || *input != '\0') {
+        if (copy_param_list(&input, &output, output_length, 0) != 0 || *input != '\0') {
             return -1;
         }
 
         if (is_const) {
-            tack(" const", output, output_length, 6);
+            tack(" const", &output, output_length, 6);
         }
     } else {
         // Not a function - check if parsing is complete
