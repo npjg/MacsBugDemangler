@@ -568,15 +568,14 @@ int copy_type(char** input_ptr, char** output_ptr, int* output_len, int max_dept
 }
 
 int unmangle(char* output, char* input, int* output_length) {
-    int local_var1;  // A6 - 0x4
-    int local_var2;  // A6 - 0x8
+    int local_var1;
+    int is_const;
 
-    // Call copy_name function
-    if (copy_name(input, output, output_length, &local_var2, &local_var1) != 0) {
+    if (copy_name(input, output, output_length, &is_const, &local_var1) != 0) {
         return 0;
     }
 
-    // Check if input starts with 'F' (function marker)
+    // Check if it's a function name
     if (*input == 'F') {
         input++; // Skip the 'F'
 
@@ -585,13 +584,12 @@ int unmangle(char* output, char* input, int* output_length) {
             return -1;
         }
 
-        // If local_var2 is set, append " const"
-        if (local_var2) {
+        if (is_const) {
             tack(" const", output, output_length, 6);
         }
     } else {
         // Not a function - check if parsing is complete
-        if (*input != '\0' || local_var2 != 0 || local_var1 != 0) {
+        if (*input != '\0' || is_const != 0 || local_var1 != 0) {
             return -1;
         }
     }
@@ -599,7 +597,6 @@ int unmangle(char* output, char* input, int* output_length) {
     // Null-terminate the output
     *output = '\0';
 
-    // Return status based on output_length
     if (*output_length < 0) {
         return 2;  // Buffer overflow
     } else {
