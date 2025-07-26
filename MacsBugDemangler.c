@@ -161,7 +161,7 @@ int copy_name(char **input_ptr, char **output_ptr, int *output_size,
     char *operator_name = NULL;
     int is_operator_new = 0;
     int name_length;
-    int digit_value;
+    size_t digit_value;
 
     *has_static = 0;
     *has_const = 0;
@@ -434,7 +434,7 @@ int copy_type(char** input_ptr, char** output_ptr, int* output_len, int max_dept
     // Handle numeric length prefixes
     if (*current_pos >= '0' && *current_pos <= '9') {
         current_pos++;
-        int len = *input - '0';
+        size_t len = *input - '0';
 
         // Parse up to 3 digit length
         for (int i = 0; i < 3 && *current_pos >= '0' && *current_pos <= '9'; i++) {
