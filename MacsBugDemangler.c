@@ -609,12 +609,21 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
     return 0;
 }
 
+typedef enum {
+    MACSBUG_DEMANGLER_SUCCESS = 0,
+    MACSBUG_DEMANGLER_NAME_FAILED = 1,
+    MACSBUG_DEMANGLER_UNKNOWN_ERROR = 3,
+    MACSBUG_DEMANGLER_PARAM_LIST_FAILED = 2,
+    MACSBUG_DEMANGLER_BUFFER_OVERFLOW = 4,
+    MACSBUG_DEMANGLER_INVALID_INPUT = 5,
+} DemanglerErrorCode;
+
 int unmangle(char* output, char* input, int* output_length) {
     int is_const = 0;
     int is_static = 0;
 
     if (copy_name(&input, &output, output_length, &is_const, &is_static) != 0) {
-        return 0;
+        return MACSBUG_DEMANGLER_NAME_FAILED;
     }
 
     // Check if it's a function name
@@ -623,7 +632,7 @@ int unmangle(char* output, char* input, int* output_length) {
 
         // Call copy_param_list with flag 0
         if (copy_param_list(&input, &output, output_length, 0) != 0 || *input != '\0') {
-            return -1;
+            return MACSBUG_DEMANGLER_PARAM_LIST_FAILED;
         }
 
         if (is_const) {
@@ -632,7 +641,7 @@ int unmangle(char* output, char* input, int* output_length) {
     } else {
         // Not a function - check if parsing is complete
         if (*input != '\0' || is_const != 0 || is_static != 0) {
-            return -1;
+            return MACSBUG_DEMANGLER_INVALID_INPUT;
         }
     }
 
@@ -640,9 +649,9 @@ int unmangle(char* output, char* input, int* output_length) {
     *output = '\0';
 
     if (*output_length < 0) {
-        return 2;  // Buffer overflow
+        return MACSBUG_DEMANGLER_BUFFER_OVERFLOW;
     } else {
-        return 1;  // Success
+        return MACSBUG_DEMANGLER_SUCCESS;
     }
 }
 
@@ -653,19 +662,15 @@ int main(int argc, char *argv[]) {
     // Check if we have a command-line argument
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <mangled_name>\n", argv[0]);
-        return 1;
+        return MACSBUG_DEMANGLER_INVALID_ARGS;
     }
 
     // Call unmangle function with the first argument
     int status = unmangle(output, argv[1], &output_length);
 
-    if (status == 1) {
+    if (status == MACSBUG_DEMANGLER_SUCCESS) {
         // Success - print the demangled name
         printf("%s\n", output);
-        return 0;
-    } else {
-        // Error occurred
-        fprintf(stderr, "Demangling failed with status: %d\n", status);
-        return 1;
     }
+    return status;
 }
