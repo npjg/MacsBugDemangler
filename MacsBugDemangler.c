@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define ERROR_PRINT(fmt, ...) fprintf(stderr, "ERROR: %s: " fmt "\n", __func__, ##__VA_ARGS__)
+
 int tack(char* src, char** dest_ptr, int* remaining_len, int len);
 int copy_param_list(char** input_ptr, char** output_ptr, int* output_remaining, int max_params);
 int copy_name(char **input_ptr, char **output_buf, int *output_len,
@@ -78,12 +80,14 @@ int copy_param_list(char **type_ptr, char **buffer_ptr, int *buffer_len, int rec
 
             // Validate template index range
             if (template_index < 1 || template_index > 9) {
+                ERROR_PRINT("Invalid template index: %d", template_index);
                 return -1;
             }
 
             // Get repeat count
             repeat_count = *current_pos++ - '0';
             if (repeat_count < 1 || repeat_count > 9 || repeat_count > param_count) {
+                ERROR_PRINT("Invalid repeat count: %d", repeat_count);
                 return -1;
             }
 
@@ -116,6 +120,7 @@ int copy_param_list(char **type_ptr, char **buffer_ptr, int *buffer_len, int rec
 
             // Process regular parameter type
             if (copy_type(&current_pos, buffer_ptr, buffer_len, NULL, recurse_level + 1, 0) != 0) {
+                ERROR_PRINT("Failed to copy parameter type");
                 return -1;
             }
 
@@ -166,6 +171,7 @@ int copy_name(char **input_ptr, char **output_ptr, int *output_size,
 
             // Parse type information
             if (copy_type(&input, output_ptr, output_size, 0, 0, 0) != 0) {
+                ERROR_PRINT("Failed to parse operator type information");
                 return -1;
             }
 
@@ -202,6 +208,7 @@ int copy_name(char **input_ptr, char **output_ptr, int *output_size,
 
                     if (*input >= '0' && *input <= '9') {
                         // Too many digits - error
+                        ERROR_PRINT("Too many digits in length encoding (max 3 digits)");
                         return -1;
                     }
                 }
@@ -209,6 +216,7 @@ int copy_name(char **input_ptr, char **output_ptr, int *output_size,
 
             // Verify the length matches
             if (strlen(input) < digit_value) {
+                ERROR_PRINT("String length %zu is less than expected length %zu", strlen(input), digit_value);
                 return -1;
             }
 
@@ -306,6 +314,7 @@ int copy_name(char **input_ptr, char **output_ptr, int *output_size,
             tack(operator_name, output_ptr, output_size, 0);
         } else {
             if (copy_type(&operator_name, output_ptr, output_size, 0, 0, 0) != 0) {
+                ERROR_PRINT("Failed to copy user-defined operator type");
                 return -1;
             }
         }
@@ -386,6 +395,7 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
         }
 
         if (recurse_level > 9) {
+            ERROR_PRINT("Too many nested functions");
             return -1;
         }
 
@@ -394,6 +404,7 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
         // Copy parameter list
         if (copy_param_list(&current_pos, buffer_ptr, buffer_len, recurse_level + 1) != 0) {
             if (*current_pos != '_') {
+                ERROR_PRINT("Parameter list parsing failed and no underscore terminator found");
                 return -1;
             }
             current_pos++;
@@ -403,6 +414,7 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
 
         // Recursive call for return type
         if (copy_type(&current_pos, buffer_ptr, buffer_len, param_ptr, recurse_level + 1, 0) != 0) {
+            ERROR_PRINT("Failed to copy function return type");
             return -1;
         }
 
@@ -419,6 +431,7 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
                 tack("const ", buffer_ptr, buffer_len, 6);
                 break;
             case 'M':
+                ERROR_PRINT("Unsupported type modifier 'M' encountered");
                 return -1;
             case 'U':
                 tack("unsigned ", buffer_ptr, buffer_len, 9);
@@ -430,6 +443,7 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
                 tack("signed ", buffer_ptr, buffer_len, 7);
                 break;
             default:
+                ERROR_PRINT("Unknown type modifier '%c' encountered", ch);
                 return -1;
         }
     }
@@ -446,6 +460,7 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
                 digit_value = digit_value * 10 + (*current_pos++ - '0');
 
                 if (*current_pos >= '0' && *current_pos <= '9') {
+                    ERROR_PRINT("Too many digits in numeric length prefix (max 3 digits)");
                     return -1; // Too many digits
                 }
             }
@@ -453,6 +468,7 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
 
         string_len = strlen(current_pos);
         if (string_len < digit_value) {
+            ERROR_PRINT("Remaining string length %d is less than expected length %d", string_len, digit_value);
             return -1;
         }
 
@@ -476,6 +492,7 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
             case 'x': type_name = "long long"; break;
             case 'z': type_name = "..."; break;
             default:
+                ERROR_PRINT("Unknown built-in type character '%c'", ch);
                 return -1;
         }
 
@@ -541,6 +558,7 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
             }
         }
         else {
+            ERROR_PRINT("Unexpected character '%c' in pointer/reference/array suffix processing", *current_pos);
             return -1;
         }
 
@@ -554,6 +572,7 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
         }
 
         if (copy_type(param_ptr, buffer_ptr, buffer_len, NULL, recurse_level + 1, 1) != 0) {
+            ERROR_PRINT("Failed to copy function parameter type");
             return -1;
         }
 
@@ -562,6 +581,7 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
         }
 
         if (copy_param_list(param_ptr, buffer_ptr, buffer_len, recurse_level + 1) != 0) {
+            ERROR_PRINT("Failed to copy function parameter list");
             return -1;
         }
     }
@@ -582,6 +602,7 @@ int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_
             current_pos++;
             char *underscore_pos = strchr(current_pos, '_');
             if (!underscore_pos) {
+                ERROR_PRINT("Missing underscore terminator in array dimension");
                 return -1;
             }
 
@@ -616,6 +637,7 @@ typedef enum {
     MACSBUG_DEMANGLER_PARAM_LIST_FAILED = 2,
     MACSBUG_DEMANGLER_BUFFER_OVERFLOW = 4,
     MACSBUG_DEMANGLER_INVALID_INPUT = 5,
+    MACSBUG_DEMANGLER_INVALID_ARGS = 6,
 } DemanglerErrorCode;
 
 int unmangle(char* output, char* input, int* output_length) {
@@ -631,6 +653,7 @@ int unmangle(char* output, char* input, int* output_length) {
         input++; // Skip the 'F'
 
         // Call copy_param_list with flag 0
+        char *saved_output = output;
         if (copy_param_list(&input, &output, output_length, 0) != 0 || *input != '\0') {
             return MACSBUG_DEMANGLER_PARAM_LIST_FAILED;
         }
