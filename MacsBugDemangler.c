@@ -7,7 +7,7 @@ int tack(char* src, char** dest_ptr, int* remaining_len, int len);
 int copy_param_list(char** input_ptr, char** output_ptr, int* output_remaining, int max_params);
 int copy_name(char **input_ptr, char **output_buf, int *output_len,
               int *has_const, int *has_static);
-int copy_type(char** input_ptr, char** output_ptr, int* output_len, int max_depth, int is_function, char** next_ptr);
+int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_ptr, int recurse_level, int is_function_type);
 int unmangle(char* output, char* input, int* output_length);
 int main(int argc, char *argv[]);
 
@@ -39,116 +39,107 @@ int tack(char* src, char** dest_ptr, int* remaining_len, int len) {
     return 0;
 }
 
-int copy_param_list(char** input_ptr, char** output_ptr, int* output_remaining, int max_params)
-{
-    char* input = *input_ptr;
-    char* param_starts[10];
-    char* param_ends[10];
+int copy_param_list(char **type_ptr, char **buffer_ptr, int *buffer_len, int recurse_level) {
+    char *current_pos;
+    char *saved_buffers[10][2]; // Array to store buffer start/end pairs
     int param_count = 0;
+    int template_index;
+    int repeat_count;
+    int i;
 
-    // Check if we need to add opening parenthesis
-    if (*output_remaining > 0) {
-        **output_ptr = '(';
-        (*output_ptr)++;
-        (*output_remaining)--;
+    current_pos = *type_ptr;
+
+    // Add opening parenthesis
+    if ((*buffer_len)-- > 0) {
+        *(*buffer_ptr)++ = '(';
     }
 
-    // Handle 'v' (void) parameter case
-    if (*input == 'v' && (input[1] == '\0' || input[1] == '_')) {
-        input++;
-        goto end_processing;
+    // Handle void parameter list
+    if (*current_pos == 'v') {
+        if (current_pos[1] == '\0' || current_pos[1] == '_') {
+            current_pos++;
+            goto end_params;
+        }
     }
 
-    // Main parameter processing loop
-    while (*input != '\0' && *input != '_') {
+    // Process parameters
+    while (*current_pos != '\0' && *current_pos != '_') {
 
-        // Handle template parameter references (T<digit> or N<digit>)
-        if (*input == 'T' || *input == 'N') {
-            input++;
+        // Handle template parameter references (T or N followed by digit)
+        if (*current_pos == 'T' || *current_pos == 'N') {
+            current_pos++;
 
-            int repeat_count;
-            if (*input == 'T') {
-                repeat_count = 1;
+            if (*current_pos == 'T') {
+                template_index = 1;
+                current_pos++;
             } else {
-                char digit = *input;
-                input++;
-                repeat_count = digit - '0';
+                template_index = *current_pos++ - '0';
             }
 
-            // Validate repeat count (1-9)
-            if (repeat_count < 1 || repeat_count > 9) {
+            // Validate template index range
+            if (template_index < 1 || template_index > 9) {
                 return -1;
             }
 
-            // Get parameter index
-            char param_digit = *input;
-            input++;
-            int param_index = param_digit - '0';
-
-            // Validate parameter index and check it's within our stored parameters
-            if (param_index < 1 || param_index > 9 || param_count < param_index) {
+            // Get repeat count
+            repeat_count = *current_pos++ - '0';
+            if (repeat_count < 1 || repeat_count > 9 || repeat_count > param_count) {
                 return -1;
             }
 
-            // Calculate array index (parameters are 1-indexed)
-            char** param_start_ptr = &param_starts[param_index - 1];
+            // Calculate offset into saved_buffers array
+            char **saved_pair = (char **)&saved_buffers[template_index - 1];
 
-            // Repeat the parameter 'repeat_count' times
-            for (int i = 0; i < repeat_count; i++) {
-                // Call tack() to copy the stored parameter
-                tack(param_starts[param_index - 1],
-                    output_ptr,
-                    output_remaining,
-                    param_ends[param_index - 1] - param_starts[param_index - 1]);
+            // Repeat the saved parameter type
+            for (i = 0; i < repeat_count; i++) {
+                // Copy the saved parameter text
+                int saved_len = saved_pair[1] - saved_pair[0];
+                tack(saved_pair[0], buffer_ptr, buffer_len, saved_len);
 
-                // Add comma separator if not the last repetition
-                if (repeat_count > 1 && i < repeat_count - 1) {
-                    tack(", ", output_ptr, output_remaining, 2);
+                if (template_index > 0) {
+                    tack(", ", buffer_ptr, buffer_len, 2);
                 }
 
-                // Store parameter bounds if we have room (max 10 parameters)
-                if (param_count < 10) {
-                    param_starts[param_count] = param_starts[param_index - 1];
-                    param_ends[param_count] = param_ends[param_index - 1];
+                // Save current buffer position if we have room
+                if (param_count <= 9) {
+                    saved_buffers[param_count][0] = saved_pair[0];
                     param_count++;
+                    saved_buffers[param_count - 1][1] = saved_pair[1];
                 }
             }
-        } else {
-            // Handle regular parameter - store start position if we have room
-            if (param_count < 10) {
-                param_starts[param_count] = *output_ptr;
+        }
+        else {
+            // Save current buffer position if we have room
+            if (param_count <= 9) {
+                saved_buffers[param_count][0] = *buffer_ptr;
             }
 
-            // Copy the type using copy_type function
-            if (copy_type(input_ptr, output_ptr, output_remaining, max_params + 1, 0, 0) != 0) {
+            // Process regular parameter type
+            if (copy_type(&current_pos, buffer_ptr, buffer_len, NULL, recurse_level + 1, 0) != 0) {
                 return -1;
             }
 
-            // Store end position and increment parameter count
-            if (param_count < 10) {
-                param_ends[param_count] = *output_ptr;
+            // Save end buffer position if we have room
+            if (param_count <= 9) {
+                saved_buffers[param_count][1] = *buffer_ptr;
                 param_count++;
             }
-
-            input = *input_ptr;
         }
 
-        // Add comma separator between parameters (but not after the last one)
-        if (*input != '\0' && *input != '_') {
-            tack(", ", output_ptr, output_remaining, 2);
+        // Add comma separator if more parameters follow
+        if (*current_pos != '\0' && *current_pos != '_') {
+            tack(", ", buffer_ptr, buffer_len, 2);
         }
     }
 
-end_processing:
+end_params:
     // Add closing parenthesis
-    if (*output_remaining > 0) {
-        **output_ptr = ')';
-        (*output_ptr)++;
-        (*output_remaining)--;
+    if ((*buffer_len)-- > 0) {
+        *(*buffer_ptr)++ = ')';
     }
 
-    // Update input pointer
-    *input_ptr = input;
+    // Update type pointer
+    *type_ptr = current_pos;
 
     return 0;
 }
@@ -328,242 +319,293 @@ int copy_name(char **input_ptr, char **output_ptr, int *output_size,
 }
 
 // Function to copy and parse type information
-int copy_type(char** input_ptr, char** output_ptr, int* output_len, int max_depth, int is_function, char** next_ptr) {
-    char* input = *input_ptr;
-    char* start_pos = input;
-    char* current_pos = input;
-    char c;
+int copy_type(char **type_ptr, char **buffer_ptr, int *buffer_len, char **param_ptr, int recurse_level, int is_function_type) {
+    char *current_pos;
+    char *start_pos;
+    char *temp_pos;
+    char *saved_buffer;
+    int digit_value;
+    int string_len;
+    int paren_count;
+    int bracket_flag;
+    char ch;
+    char *type_name;
 
-    // Skip type qualifiers (P, R, A followed by digits and _)
+    start_pos = *type_ptr;
+    current_pos = start_pos;
+
+    // Skip over prefix characters (P, R, A followed by digits/underscore)
     while (1) {
-        c = *current_pos;
-        if (c == 'P' || c == 'R') {
+        ch = *current_pos;
+
+        if (ch == 'P' || ch == 'R') {
             current_pos++;
             continue;
         }
-        if (c == 'A') {
+
+        if (ch == 'A') {
             current_pos++;
+            ch = *current_pos;
             // Skip digits
-            while (*current_pos >= '0' && *current_pos <= '9') {
+            while (ch >= '0' && ch <= '9') {
                 current_pos++;
+                ch = *current_pos;
             }
-            if (*current_pos == '_') {
+            if (ch == '_') {
                 current_pos++;
                 continue;
             }
             break;
         }
-        if (c == 'C' || c == 'V') {
-            // Skip const/volatile qualifiers
-            char* temp = current_pos + 1;
-            while (*temp == 'C' || *temp == 'V' || *temp == 'P' || *temp == 'R') {
-                temp++;
+
+        if (ch == 'C' || ch == 'V') {
+            // Skip over consecutive C and V characters until P or R
+            temp_pos = current_pos + 1;
+            while (*temp_pos == 'C' || *temp_pos == 'V') {
+                temp_pos++;
             }
-            current_pos = temp;
-            continue;
+            if (*temp_pos == 'P' || *temp_pos == 'R') {
+                current_pos = temp_pos;
+                current_pos++;
+                continue;
+            }
         }
+
         break;
     }
 
-    char* type_start = current_pos;
+    temp_pos = current_pos;
 
-    // Handle function types
+    // Handle function type 'F'
     if (*current_pos == 'F') {
-        if (next_ptr) {
-            *next_ptr = current_pos;
+        current_pos++;
+
+        if (is_function_type) {
+            *type_ptr = current_pos;
             return 0;
         }
 
-        if (max_depth < 9) {
+        if (recurse_level > 9) {
             return -1;
         }
 
-        current_pos++;
-        char* saved_output = *output_ptr;
-        int saved_len = *output_len;
+        saved_buffer = *buffer_ptr;
 
-        // Parse parameter list
-        if (copy_param_list(&current_pos, output_ptr, output_len, max_depth + 1) != 0) {
+        // Copy parameter list
+        if (copy_param_list(&current_pos, buffer_ptr, buffer_len, recurse_level + 1) != 0) {
+            if (*current_pos != '_') {
+                return -1;
+            }
+            current_pos++;
+        }
+
+        *buffer_ptr = saved_buffer;
+
+        // Recursive call for return type
+        if (copy_type(&current_pos, buffer_ptr, buffer_len, param_ptr, recurse_level + 1, 0) != 0) {
             return -1;
         }
 
-        if (*current_pos != '_') {
-            return -1;
-        }
-        current_pos++;
-
-        // Restore output position and parse return type
-        *output_ptr = saved_output;
-        *output_len = saved_len;
-
-        if (copy_type(&current_pos, output_ptr, output_len, max_depth + 1, 0, 0) != 0) {
-            return -1;
-        }
-
-        *input_ptr = current_pos;
+        *type_ptr = current_pos;
         return 0;
     }
 
-    // Handle various type specifiers
-    while (1) {
-        c = *current_pos;
-        if (c >= 'A' && c <= 'Z') {
-            current_pos++;
-            switch (c) {
-                case 'C':
-                    tack("const ", output_ptr, output_len, 6);
-                    break;
-                case 'M':
-                    tack("unsigned ", output_ptr, output_len, 9);
-                    break;
-                case 'S':
-                    tack("signed ", output_ptr, output_len, 7);
-                    break;
-                case 'V':
-                    tack("volatile ", output_ptr, output_len, 9);
-                    break;
-                default:
-                    return -1;
-            }
-            continue;
+    // Handle type modifiers (const, unsigned, volatile, signed)
+    while ((*current_pos >= 'A' && *current_pos <= 'Z')) {
+        ch = *current_pos++;
+
+        switch (ch) {
+            case 'C':
+                tack("const ", buffer_ptr, buffer_len, 6);
+                break;
+            case 'M':
+                return -1;
+            case 'U':
+                tack("unsigned ", buffer_ptr, buffer_len, 9);
+                break;
+            case 'V':
+                tack("volatile ", buffer_ptr, buffer_len, 9);
+                break;
+            case 'S':
+                tack("signed ", buffer_ptr, buffer_len, 7);
+                break;
+            default:
+                return -1;
         }
-        break;
     }
 
-    // Handle numeric length prefixes
+    // Handle numeric length prefix
     if (*current_pos >= '0' && *current_pos <= '9') {
-        size_t len = *current_pos - '0';
-        current_pos++;
+        digit_value = *current_pos++ - '0';
 
-        // Parse up to 3 digit length
-        for (int i = 0; i < 3 && *current_pos >= '0' && *current_pos <= '9'; i++) {
-            len = len * 10 + (*current_pos - '0');
-            current_pos++;
+        // Parse up to 3 digits
+        if (*current_pos >= '0' && *current_pos <= '9') {
+            digit_value = digit_value * 10 + (*current_pos++ - '0');
+
+            if (*current_pos >= '0' && *current_pos <= '9') {
+                digit_value = digit_value * 10 + (*current_pos++ - '0');
+
+                if (*current_pos >= '0' && *current_pos <= '9') {
+                    return -1; // Too many digits
+                }
+            }
         }
 
-        // TODO: Understand what this check is.
-        // if (len > 3) {
-        //     return -1;
-        // }
-
-        if (strlen(current_pos) < len) {
+        string_len = strlen(current_pos);
+        if (string_len < digit_value) {
             return -1;
         }
 
-        tack(current_pos, output_ptr, output_len, len);
-        current_pos += len;
-    } else {
+        tack(current_pos, buffer_ptr, buffer_len, digit_value);
+        current_pos += digit_value;
+    }
+    else {
         // Handle built-in types
-        current_pos++;
-        char* type_name = NULL;
+        ch = *current_pos++;
 
-        switch (*(current_pos - 1)) {
+        switch (ch) {
             case 'c': type_name = "char"; break;
+            case 'd': type_name = "double"; break;
+            case 'e': type_name = "long double"; break;
+            case 'f': type_name = "float"; break;
             case 'i': type_name = "int"; break;
             case 'l': type_name = "long"; break;
-            case 'f': type_name = "float"; break;
-            case 'd': type_name = "double"; break;
             case 'r': type_name = "long double"; break;
+            case 's': type_name = "short"; break;
             case 'v': type_name = "void"; break;
-            case 'e': type_name = "..."; break;
-            case 'x': type_name = "extended"; break;
-            case 'b': type_name = "extended_80"; break;
-            case 'p': type_name = "comp"; break;
+            case 'x': type_name = "long long"; break;
+            case 'z': type_name = "..."; break;
             default:
                 return -1;
         }
 
-        tack(type_name, output_ptr, output_len, 0);
+        tack(type_name, buffer_ptr, buffer_len, 0);
     }
 
-    *next_ptr = current_pos;
+    *type_ptr = current_pos;
 
-    // Add space if needed
+    // Add space if we've moved past the start and not at 'F'
     if (current_pos != start_pos && *current_pos != 'F') {
-        if (*output_len > 0) {
-            **output_ptr = ' ';
-            (*output_ptr)++;
-            (*output_len)--;
+        if ((*buffer_len)-- > 0) {
+            *(*buffer_ptr)++ = ' ';
         }
     }
 
-    // Process pointer/reference/array qualifiers in reverse
-    int paren_count = 0;
-    current_pos = type_start - 1;
+    // Process pointer/reference/array suffixes
+    paren_count = 0;
+    current_pos = temp_pos - 1;
 
     while (current_pos >= start_pos) {
-        c = *current_pos;
+        bracket_flag = 0;
 
-        if (c == '_') {
-            // Skip array dimensions
-            current_pos--;
-            while (current_pos >= start_pos && *current_pos != 'A') {
-                current_pos--;
+        // Handle array dimensions
+        if (*current_pos == '_') {
+            while (--current_pos >= start_pos && *current_pos == 'A') {
+                paren_count++;
+                bracket_flag = 1;
+                break;
             }
-            if (current_pos < start_pos) break;
+        }
 
-            if (paren_count > 0) {
-                if (*output_len > 0) {
-                    **output_ptr = ')';
-                    (*output_ptr)++;
-                    (*output_len)--;
+        if (paren_count && !bracket_flag) {
+            if ((*buffer_len)-- > 0) {
+                *(*buffer_ptr)++ = '(';
+            }
+            paren_count--;
+        }
+
+        if (*current_pos == 'P') {
+            if ((*buffer_len)-- > 0) {
+                *(*buffer_ptr)++ = '*';
+            }
+        }
+        else if (*current_pos == 'R') {
+            if ((*buffer_len)-- > 0) {
+                *(*buffer_ptr)++ = '&';
+            }
+        }
+        else if (*current_pos == 'C') {
+            tack("const", buffer_ptr, buffer_len, 5);
+            if (current_pos > start_pos || bracket_flag) {
+                if ((*buffer_len)-- > 0) {
+                    *(*buffer_ptr)++ = ' ';
                 }
-                paren_count--;
             }
-
-            // Find array start
-            char* array_start = current_pos + 1;
-            char* underscore_pos = strchr(array_start, '_');
-            if (!underscore_pos) return -1;
-
-            int array_len = underscore_pos - array_start;
-
-            if (*output_len > 0) {
-                **output_ptr = '[';
-                (*output_ptr)++;
-                (*output_len)--;
+        }
+        else if (*current_pos == 'V') {
+            tack("volatile", buffer_ptr, buffer_len, 8);
+            if (current_pos > start_pos || bracket_flag) {
+                if ((*buffer_len)-- > 0) {
+                    *(*buffer_ptr)++ = ' ';
+                }
             }
-
-            tack(array_start, output_ptr, output_len, array_len);
-
-            if (*output_len > 0) {
-                **output_ptr = ']';
-                (*output_ptr)++;
-                (*output_len)--;
-            }
-
-            current_pos = underscore_pos;
-        } else {
-            paren_count++;
+        }
+        else {
+            return -1;
         }
 
         current_pos--;
     }
 
-    // Handle function parameters if this is a function
-    if (is_function) {
-        if (*output_len > 0) {
-            **output_ptr = '(';
-            (*output_ptr)++;
-            (*output_len)--;
+    // Handle function parameters if present
+    if (param_ptr) {
+        if ((*buffer_len)-- > 0) {
+            *(*buffer_ptr)++ = '(';
         }
 
-        if (copy_type(next_ptr, output_ptr, output_len, max_depth + 1, 1, 0) != 0) {
+        if (copy_type(param_ptr, buffer_ptr, buffer_len, NULL, recurse_level + 1, 1) != 0) {
             return -1;
         }
 
-        if (*output_len > 0) {
-            **output_ptr = ')';
-            (*output_ptr)++;
-            (*output_len)--;
+        if ((*buffer_len)-- > 0) {
+            *(*buffer_ptr)++ = ')';
         }
 
-        if (copy_param_list(next_ptr, output_ptr, output_len, max_depth + 1) != 0) {
+        if (copy_param_list(param_ptr, buffer_ptr, buffer_len, recurse_level + 1) != 0) {
             return -1;
         }
     }
 
-    *input_ptr = *next_ptr;
+    // Handle array dimensions
+    paren_count = 0;
+    current_pos = start_pos;
+
+    while (current_pos < temp_pos) {
+        if (*current_pos == 'A') {
+            if (paren_count) {
+                if ((*buffer_len)-- > 0) {
+                    *(*buffer_ptr)++ = ')';
+                }
+                paren_count--;
+            }
+
+            current_pos++;
+            char *underscore_pos = strchr(current_pos, '_');
+            if (!underscore_pos) {
+                return -1;
+            }
+
+            digit_value = underscore_pos - current_pos;
+
+            if ((*buffer_len)-- > 0) {
+                *(*buffer_ptr)++ = '[';
+            }
+
+            tack(current_pos, buffer_ptr, buffer_len, digit_value);
+
+            if ((*buffer_len)-- > 0) {
+                *(*buffer_ptr)++ = ']';
+            }
+
+            current_pos = underscore_pos;
+        }
+        else {
+            paren_count++;
+        }
+
+        current_pos++;
+    }
+
     return 0;
 }
 
@@ -571,11 +613,9 @@ int unmangle(char* output, char* input, int* output_length) {
     int is_const = 0;
     int is_static = 0;
 
-    char *output_start = output;
     if (copy_name(&input, &output, output_length, &is_const, &is_static) != 0) {
         return 0;
     }
-    printf("Demangled: %s\n", output_start);
 
     // Check if it's a function name
     if (*input == 'F') {
